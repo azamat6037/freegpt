@@ -182,7 +182,6 @@ def consume_quota(user_id: int) -> tuple[bool, int]:
             "INSERT OR IGNORE INTO users (user_id, last_reset_date, first_seen) VALUES (?, ?, ?)",
             (user_id, today, today),
         )
-        conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
             "SELECT daily_count, last_reset_date FROM users WHERE user_id = ?",
             (user_id,),
