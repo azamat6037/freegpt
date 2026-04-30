@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: uzbek-ai-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11"
