@@ -423,14 +423,8 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ────────── Entry point ──────────
-def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-    )
-    init_db()
-
+def create_application() -> Application:
+    """Build and configure telegram application with all handlers."""
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     # Commands (English + Uzbek aliases)
@@ -446,6 +440,18 @@ def main():
     # Messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.VOICE, on_voice))
+    return app
+
+
+# ────────── Entry point ──────────
+def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+    )
+    init_db()
+
+    app = create_application()
 
     # Python 3.14+ may start without a default event loop in MainThread.
     # python-telegram-bot's run_polling/run_webhook expects one to exist.
