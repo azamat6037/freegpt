@@ -10,6 +10,7 @@ Features:
 """
 
 import os
+import asyncio
 import json
 import logging
 import sqlite3
@@ -390,7 +391,9 @@ def main():
     # Messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.VOICE, on_voice))
-
+    
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    
     if WEBHOOK_URL:
         logging.info(f"Starting in webhook mode on port {PORT}")
         app.run_webhook(
