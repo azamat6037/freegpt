@@ -446,7 +446,14 @@ def main():
     # Messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.VOICE, on_voice))
-    
+
+    # Python 3.14+ may start without a default event loop in MainThread.
+    # python-telegram-bot's run_polling/run_webhook expects one to exist.
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     if WEBHOOK_URL:
         logging.info(f"Starting in webhook mode on port {PORT}")
         app.run_webhook(
