@@ -212,7 +212,7 @@ def consume_quota(user_id: int) -> tuple[bool, int]:
 async def call_groq(messages: list) -> str:
     """Call Groq with model fallback."""
     last_err = None
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=25.0) as client:
         for model in GROQ_MODELS:
             try:
                 resp = await client.post(
