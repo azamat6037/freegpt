@@ -40,7 +40,7 @@ HISTORY_TURNS = 10  # remember last N user/assistant pairs
 DB_PATH = os.environ.get("DB_PATH", "/tmp/bot.db")
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]  # try in order
+GROQ_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]  # fast model first
 
 # ────────── System prompts (Uzbek Latin) ──────────
 PROMPTS = {
@@ -212,7 +212,7 @@ def consume_quota(user_id: int) -> tuple[bool, int]:
 async def call_groq(messages: list) -> str:
     """Call Groq with model fallback."""
     last_err = None
-    async with httpx.AsyncClient(timeout=50.0) as client:
+    async with httpx.AsyncClient(timeout=25.0) as client:
         for model in GROQ_MODELS:
             try:
                 resp = await client.post(
@@ -377,7 +377,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         reply = await call_groq(messages)
-    except Exception as e:
+    except Exception:
         logging.exception("AI call failed")
         await update.message.reply_text(
             "❌ Kechirasiz, AI hozir mavjud emas.\n"
