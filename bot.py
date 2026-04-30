@@ -148,19 +148,64 @@ def save_user(user_id: int, **fields):
         conn.commit()
 
 
-def check_and_increment_limit(user_id: int) -> tuple[bool, int]:
-    """Returns (allowed, remaining_after)."""
-    user = get_user(user_id)
+def get_quota_status(user_id: int) -> tuple[bool, int]:
+    """Returns (allowed, remaining_now) without consuming quota."""
     today = str(date.today())
-    if user["last_reset_date"] != today:
-        save_user(user_id, daily_count=0, last_reset_date=today)
-        user["daily_count"] = 0
-
-    if user["daily_count"] >= DAILY_LIMIT:
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (user_id, last_reset_date, first_seen) VALUES (?, ?, ?)",
+            (user_id, today, today),
+        )
+        row = conn.execute(
+            "SELECT daily_count, last_reset_date FROM users WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row["last_reset_date"] != today:
+            conn.execute(
+                "UPDATE users SET daily_count = 0, last_reset_date = ? WHERE user_id = ?",
+                (today, user_id),
+            )
+            daily_count = 0
+        else:
+            daily_count = row["daily_count"]
+        conn.commit()
+    if daily_count >= DAILY_LIMIT:
         return False, 0
-    new_count = user["daily_count"] + 1
-    save_user(user_id, daily_count=new_count)
-    return True, DAILY_LIMIT - new_count
+    return True, DAILY_LIMIT - daily_count
+
+
+def consume_quota(user_id: int) -> tuple[bool, int]:
+    """Atomically consume one quota unit. Returns (consumed, remaining_after)."""
+    today = str(date.today())
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (user_id, last_reset_date, first_seen) VALUES (?, ?, ?)",
+            (user_id, today, today),
+        )
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT daily_count, last_reset_date FROM users WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        daily_count = row["daily_count"]
+        if row["last_reset_date"] != today:
+            daily_count = 0
+            conn.execute(
+                "UPDATE users SET daily_count = 0, last_reset_date = ? WHERE user_id = ?",
+                (today, user_id),
+            )
+
+        if daily_count >= DAILY_LIMIT:
+            conn.commit()
+            return False, 0
+
+        new_count = daily_count + 1
+        conn.execute(
+            "UPDATE users SET daily_count = ? WHERE user_id = ?",
+            (new_count, user_id),
+        )
+        conn.commit()
+        return True, DAILY_LIMIT - new_count
 
 
 # ────────── AI calls ──────────
@@ -306,8 +351,8 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not text:
         return
 
-    # Rate limit check
-    allowed, remaining = check_and_increment_limit(user_id)
+    # Rate limit check (without consuming quota)
+    allowed, remaining = get_quota_status(user_id)
     if not allowed:
         await update.message.reply_text(
             f"⛔ *Kunlik chegaraga yetdingiz* ({DAILY_LIMIT} ta savol)\n\n"
@@ -340,6 +385,16 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Consume quota only after a successful AI response.
+    consumed, remaining = consume_quota(user_id)
+    if not consumed:
+        await update.message.reply_text(
+            f"⛔ *Kunlik chegaraga yetdingiz* ({DAILY_LIMIT} ta savol)\n\n"
+            f"Iltimos ertaga qaytib keling. Chegara yarim tunda yangilanadi.",
+            parse_mode="Markdown",
+        )
+        return
+
     # Save updated history (keep last N turns)
     history.append({"role": "user", "content": text})
     history.append({"role": "assistant", "content": reply})
@@ -349,12 +404,12 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Add footer when running low
     footer = ""
     if remaining <= 20:
-        footer = f"\n\n_Bugun qolgan: {remaining} ta savol_"
+        footer = f"\n\nBugun qolgan: {remaining} ta savol"
 
     # Telegram message limit is 4096 chars; split if needed
     full = reply + footer
     if len(full) <= 4000:
-        await update.message.reply_text(full, parse_mode="Markdown")
+        await update.message.reply_text(full)
     else:
         for i in range(0, len(full), 4000):
             await update.message.reply_text(full[i : i + 4000])
@@ -391,8 +446,6 @@ def main():
     # Messages
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_handler(MessageHandler(filters.VOICE, on_voice))
-    
-    asyncio.set_event_loop(asyncio.new_event_loop())
     
     if WEBHOOK_URL:
         logging.info(f"Starting in webhook mode on port {PORT}")
